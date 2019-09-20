@@ -1,5 +1,5 @@
 /*eslint-env node*/
-'use strict';
+'use strict'; //eslint-disable-line strict
 
 module.exports = function(config) {
     var options = {

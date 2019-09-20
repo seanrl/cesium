@@ -101,7 +101,6 @@ var filesToConvertES6 = ['Source/**/*.js',
                          'Specs/**/*.js',
                          '!Source/ThirdParty/**',
                          '!Source/Cesium.js',
-                         '!Source/main.js',
                          '!Source/copyrightHeader.js',
                          '!Source/Shaders/**',
                          '!Source/Workers/cesiumWorkerBootstrapper.js',
@@ -122,7 +121,7 @@ function createWorkers() {
     ]);
     return rollup.rollup({
         input: workers
-    }).then(bundle => {
+    }).then(function(bundle) {
         return bundle.write({
             dir: 'Source/Workers/Build',
             format: 'amd'
@@ -1068,7 +1067,7 @@ function combineCesium(debug, optimizer, combineOutput) {
 
     return rollup.rollup({
         input: 'Source/Cesium.js'
-    }).then(bundle => {
+    }).then(function(bundle) {
         return bundle.write({
             format: 'umd',
             name: 'Cesium',
@@ -1492,7 +1491,7 @@ function buildCesiumViewer() {
     var promise = Promise.join(
         rollup.rollup({
             input: 'Apps/CesiumViewer/CesiumViewer.js'
-        }).then(bundle => {
+        }).then(function(bundle) {
             return bundle.write({
                 file: 'Build/Apps/CesiumViewer/CesiumViewer.js',
                 format: 'iife'
