@@ -30,12 +30,14 @@
     "email": "cesium-dev@googlegroups.com"
   },
   "dependencies": {
+    "esm": "^3.2.25",
     "requirejs": "^2.3.2"
   },
   "devDependencies": {
     "almond": "^0.3.3",
     "aws-sdk": "^2.18.0",
     "bluebird": "^3.4.6",
+    "clean-css": "^4.2.1",
     "cloc": "^2.3.3",
     "compression": "^1.6.2",
     "eslint": "^5.13.0",
@@ -72,6 +74,7 @@
     "request": "^2.79.0",
     "rimraf": "^2.6.1",
     "rollup": "^1.21.4",
+    "rollup-plugin-uglify": "^6.0.3",
     "stream-to-promise": "^2.2.0",
     "yargs": "^14.0.0"
   },

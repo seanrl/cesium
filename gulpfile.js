@@ -63,7 +63,7 @@ var sourceFiles = ['Source/**/*.js',
                    '!Source/ThirdParty/crunch.js',
                    'Source/Workers/createTaskProcessorWorker.js'];
 
-var buildFiles = ['Specs/**/*.js',
+var buildFiles = ['Source/**/*.js',
                   '!Specs/SpecList.js',
                   'Source/Shaders/**/*.glsl'];
 
@@ -146,8 +146,8 @@ gulp.task('build-watch', function() {
 
 gulp.task('buildApps', function() {
     return Promise.join(
-        buildCesiumViewer(),
-        buildSandcastle()
+        buildCesiumViewer()
+        //buildSandcastle()
     );
 });
 
@@ -1065,20 +1065,31 @@ gulp.task('convertToModules', function() {
 });
 
 function combineCesium(debug, optimizer, combineOutput) {
-    return requirejsOptimize('Cesium.js', {
-        wrap : true,
-        useStrict : true,
-        optimize : optimizer,
-        optimizeCss : 'standard',
-        pragmas : {
-            debug : debug
-        },
-        baseUrl : 'Source',
-        skipModuleInsertion : true,
-        name : removeExtension(path.relative('Source', require.resolve('almond'))),
-        include : 'main',
-        out : path.join(combineOutput, 'Cesium.js')
+
+    return rollup.rollup({
+        input: 'Source/Cesium.js'
+    }).then(bundle => {
+        return bundle.write({
+            format: 'umd',
+            name: 'Cesium',
+            file: path.join(combineOutput, 'Cesium.js')
+        });
     });
+
+    // return requirejsOptimize('Cesium.js', {
+    //     wrap : true,
+    //     useStrict : true,
+    //     optimize : optimizer,
+    //     optimizeCss : 'standard',
+    //     pragmas : {
+    //         debug : debug
+    //     },
+    //     baseUrl : 'Source',
+    //     skipModuleInsertion : true,
+    //     name : removeExtension(path.relative('Source', require.resolve('almond'))),
+    //     include : 'main',
+    //     out : path.join(combineOutput, 'Cesium.js')
+    // });
 }
 
 function combineWorkers(debug, optimizer, combineOutput) {
@@ -1173,9 +1184,9 @@ function combineJavaScript(options) {
     var copyrightHeader = fs.readFileSync(path.join('Source', 'copyrightHeader.js'));
 
     var promise = Promise.join(
-        combineCesium(!removePragmas, optimizer, combineOutput),
-        combineWorkers(!removePragmas, optimizer, combineOutput),
-        minifyModules(outputDirectory)
+        combineCesium(!removePragmas, optimizer, combineOutput)//,
+        // combineWorkers(!removePragmas, optimizer, combineOutput),
+        // minifyModules(outputDirectory)
     );
 
     return promise.then(function() {
@@ -1471,24 +1482,21 @@ function buildSandcastle() {
     return streamToPromise(mergeStream(appStream, imageStream, standaloneStream));
 }
 
+// $ ./node_modules/.bin/rollup -i Apps/CesiumViewer/CesiumViewer.js -o Build/Apps/CesiumViewer/CesiumViewer.js --output.format iife --no-treeshake.moduleSideEffects
 function buildCesiumViewer() {
     var cesiumViewerOutputDirectory = 'Build/Apps/CesiumViewer';
-    var cesiumViewerStartup = path.join(cesiumViewerOutputDirectory, 'CesiumViewerStartup.js');
+    var cesiumViewerStartup = path.join(cesiumViewerOutputDirectory, 'CesiumViewer.js');
     var cesiumViewerCss = path.join(cesiumViewerOutputDirectory, 'CesiumViewer.css');
     mkdirp.sync(cesiumViewerOutputDirectory);
 
     var promise = Promise.join(
-        requirejsOptimize('CesiumViewer', {
-            wrap : true,
-            useStrict : true,
-            optimizeCss : 'standard',
-            pragmas : {
-                debug : false
-            },
-            optimize : 'uglify2',
-            mainConfigFile : 'Apps/CesiumViewer/CesiumViewerStartup.js',
-            name : 'CesiumViewerStartup',
-            out : cesiumViewerStartup
+        rollup.rollup({
+            input: 'Apps/CesiumViewer/CesiumViewer.js'
+        }).then(bundle => {
+            return bundle.write({
+                file: 'Build/Apps/CesiumViewer/CesiumViewer.js',
+                format: 'iife'
+            });
         }),
         requirejsOptimize('CesiumViewer CSS', {
             wrap : true,
@@ -1521,9 +1529,6 @@ function buildCesiumViewer() {
                       '!Apps/CesiumViewer/index.html',
                       '!Apps/CesiumViewer/**/*.js',
                       '!Apps/CesiumViewer/**/*.css']),
-
-            gulp.src(['ThirdParty/requirejs-2.1.20/require.min.js'])
-                .pipe(gulpRename('require.js')),
 
             gulp.src(['Build/Cesium/Assets/**',
                       'Build/Cesium/Workers/**',
