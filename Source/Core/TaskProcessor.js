@@ -131,7 +131,7 @@ import RuntimeError from './RuntimeError.js';
             bootstrapMessage.loaderConfig = TaskProcessor._loaderConfig;
         } else {
             bootstrapMessage.loaderConfig.paths = {
-                'Workers': buildModuleUrl('Workers/Build')
+                'Workers': buildModuleUrl('Workers')
             };
             bootstrapMessage.loaderConfig.baseUrl = buildModuleUrl.getCesiumBaseUrl().url;
         }

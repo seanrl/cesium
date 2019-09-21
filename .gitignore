@@ -17,7 +17,7 @@ Thumbs.db
 /Specs/SpecList.js
 /Source/Shaders/**/*.js
 /Source/ThirdParty/Shaders/**/*.js
-/Source/Workers/Build
+/Source/Workers
 
 /node_modules
 npm-debug.log

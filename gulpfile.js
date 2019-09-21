@@ -61,11 +61,12 @@ if (!concurrency) {
 var sourceFiles = ['Source/**/*.js',
                    '!Source/*.js',
                    '!Source/Workers/**',
+                   '!Source/WorkersES6/**',
                    '!Source/ThirdParty/Workers/**',
                    '!Source/ThirdParty/google-earth-dbroot-parser.js',
                    '!Source/ThirdParty/pako_inflate.js',
                    '!Source/ThirdParty/crunch.js',
-                   'Source/Workers/createTaskProcessorWorker.js'];
+                   'Source/WorkersES6/createTaskProcessorWorker.js'];
 
 var buildFiles = ['Source/**/*.js',
                   '!Specs/SpecList.js',
@@ -74,7 +75,7 @@ var buildFiles = ['Source/**/*.js',
 var filesToClean = ['Source/Cesium.js',
                     'Build',
                     'Source/Shaders/**/*.js',
-                    'Source/Workers/Build',
+                    'Source/Workers',
                     'Source/ThirdParty/Shaders/*.js',
                     'Specs/SpecList.js',
                     'Apps/Sandcastle/jsHintOptions.js',
@@ -88,8 +89,8 @@ var filesToConvertES6 = ['Source/**/*.js',
                          '!Source/Cesium.js',
                          '!Source/copyrightHeader.js',
                          '!Source/Shaders/**',
-                         '!Source/Workers/cesiumWorkerBootstrapper.js',
-                         '!Source/Workers/transferTypedArrayTest.js',
+                         '!Source/WorkersES6/cesiumWorkerBootstrapper.js',
+                         '!Source/WorkersES6/transferTypedArrayTest.js',
                          '!Specs/karma-main.js',
                          '!Specs/karma.conf.js',
                          '!Specs/spec-main.js',
@@ -98,19 +99,25 @@ var filesToConvertES6 = ['Source/**/*.js',
                         ];
 
 function createWorkers() {
-    rimraf.sync('Source/Workers/Build');
+    rimraf.sync('Source/Workers');
     var workers = globby.sync([
-        'Source/Workers/**',
-        '!Source/Workers/cesiumWorkerBootstrapper.js',
-        '!Source/Workers/transferTypedArrayTest.js'
+        'Source/WorkersES6/**',
+        '!Source/WorkersES6/cesiumWorkerBootstrapper.js',
+        '!Source/WorkersES6/transferTypedArrayTest.js'
     ]);
     return rollup.rollup({
         input: workers
     }).then(function(bundle) {
         return bundle.write({
-            dir: 'Source/Workers/Build',
+            dir: 'Source/Workers',
             format: 'amd'
         });
+    }).then(function(){
+        var stream = gulp.src([
+            'Source/WorkersES6/cesiumWorkerBootstrapper.js',
+            'Source/WorkersES6/transferTypedArrayTest.js'
+        ]).pipe(gulp.dest('Source/Workers'));
+        return streamToPromise(stream);
     });
 }
 
@@ -680,7 +687,7 @@ gulp.task('coverage', function(done) {
             'Source/Scene/**/*.js': ['karma-coverage-istanbul-instrumenter'],
             'Source/Shaders/**/*.js': ['karma-coverage-istanbul-instrumenter'],
             'Source/Widgets/**/*.js': ['karma-coverage-istanbul-instrumenter'],
-            'Source/Workers/**/*.js': ['karma-coverage-istanbul-instrumenter']
+            'Source/WorkersES6/**/*.js': ['karma-coverage-istanbul-instrumenter']
         },
         coverageIstanbulInstrumenter: {
             esModules: true
@@ -932,8 +939,8 @@ function combineWorkers(debug, optimizer, combineOutput) {
             return streamToPromise(stream);
         })
         .then(function () {
-            return globby(['Source/Workers/cesiumWorkerBootstrapper.js',
-                'Source/Workers/transferTypedArrayTest.js',
+            return globby(['Source/WorkersES6/cesiumWorkerBootstrapper.js',
+                'Source/WorkersES6/transferTypedArrayTest.js',
                 'Source/ThirdParty/Workers/*.js',
                 // Files are already minified, don't optimize
                 '!Source/ThirdParty/Workers/draco*.js']);
@@ -946,10 +953,10 @@ function combineWorkers(debug, optimizer, combineOutput) {
             }, {concurrency : concurrency});
         })
         .then(function() {
-            return globby(['Source/Workers/*.js',
-                           '!Source/Workers/cesiumWorkerBootstrapper.js',
-                           '!Source/Workers/transferTypedArrayTest.js',
-                           '!Source/Workers/createTaskProcessorWorker.js']);
+            return globby(['Source/WorkersES6/*.js',
+                           '!Source/WorkersES6/cesiumWorkerBootstrapper.js',
+                           '!Source/WorkersES6/transferTypedArrayTest.js',
+                           '!Source/WorkersES6/createTaskProcessorWorker.js']);
         })
         .then(function(files) {
             var plugins = [];
@@ -1008,7 +1015,6 @@ function combineJavaScript(options) {
         //copy to build folder with copyright header added at the top
         var stream = gulp.src([combineOutput + '/**'])
             .pipe(gulpInsert.prepend(copyrightHeader))
-            .pipe(gulpReplace('Workers/Build', 'Workers'))
             .pipe(gulp.dest(outputDirectory));
 
         promises.push(streamToPromise(stream));
@@ -1312,7 +1318,6 @@ function buildCesiumViewer() {
         var stream = mergeStream(
             gulp.src('Build/Apps/CesiumViewer/CesiumViewer.js')
                 .pipe(gulpInsert.prepend(copyrightHeader))
-                .pipe(gulpReplace('Workers/Build', 'Workers'))
                 .pipe(gulp.dest(cesiumViewerOutputDirectory)),
 
             gulp.src('Apps/CesiumViewer/CesiumViewer.css')
