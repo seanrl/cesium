@@ -400,10 +400,10 @@ gulp.task('deploy-s3', function(done) {
 
 // Deploy cesium to s3
 function deployCesium(cacheControl, done) {
-    var bucketName = 'cesium-dev';
-    var refDocPrefix = 'hpinkos-cesium.com-test/docs/cesiumjs-ref-doc';
-    var sandcastlePrefix = 'hpinkos-cesium.com-test/cesiumjs/sandcastle';
-    var cesiumViewerPrefix = 'hpinkos-cesium.com-test/cesiumjs/cesium-viewer';
+    var bucketName = 'cesium.com';
+    var refDocPrefix = 'docs/cesiumjs-ref-doc';
+    // var sandcastlePrefix = 'hpinkos-cesium.com-test/cesiumjs/sandcastle';
+    var cesiumViewerPrefix = 'cesiumjs/cesium-viewer';
     var readFile = Promise.promisify(fs.readFile);
     var gzip = Promise.promisify(zlib.gzip);
     var concurrencyLimit = 2000;
@@ -466,12 +466,12 @@ function deployCesium(cacheControl, done) {
         }, {concurrency : concurrencyLimit});
     }
 
-    var uploadSandcastle = globby([
-        'Build/Sandcastle/**'
-    ])
-        .then(function(files) {
-            return uploadFiles(sandcastlePrefix, 'Build/Sandcastle/', files);
-        });
+    // var uploadSandcastle = globby([
+    //     'Build/Sandcastle/**'
+    // ])
+    //     .then(function(files) {
+    //         return uploadFiles(sandcastlePrefix, 'Build/Sandcastle/', files);
+    //     });
 
     var uploadRefDoc = globby([
         'Build/Documentation/**'
@@ -487,7 +487,7 @@ function deployCesium(cacheControl, done) {
             return uploadFiles(cesiumViewerPrefix, 'Build/CesiumViewer/', files);
         });
 
-    Promise.join(uploadSandcastle, uploadRefDoc, uploadCesiumViewer)
+    Promise.join(/*uploadSandcastle, */uploadRefDoc, uploadCesiumViewer)
         .then(function() {
             console.log('Successfully uploaded ' + uploaded + ' files.');
         })
