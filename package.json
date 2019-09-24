@@ -29,9 +29,6 @@
     "url": "https://github.com/AnalyticalGraphicsInc/cesium/issues",
     "email": "cesium-dev@googlegroups.com"
   },
-  "dependencies": {
-    "esm": "^3.2.25"
-  },
   "devDependencies": {
     "almond": "^0.3.3",
     "aws-sdk": "^2.531.0",

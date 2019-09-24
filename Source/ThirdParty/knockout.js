@@ -5,7 +5,9 @@ import SvgPathBindingHandler from '../Widgets/SvgPathBindingHandler.js';
 // install the Knockout-ES5 plugin
 knockout_es5.attachToKo(knockout);
 
-// Register all Cesium binding handlers
-SvgPathBindingHandler.register(knockout);
+if (typeof window !== 'undefined') {
+    // Register all Cesium binding handlers
+    SvgPathBindingHandler.register(knockout);
+}
 
 export default knockout;
