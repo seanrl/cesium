@@ -231,6 +231,15 @@ define(function() {\n\
 
 gulp.task('generateStubs', gulp.series('build', generateStubs));
 
+function combineForSandcastle() {
+    var outputDirectory = path.join('Build', 'Sandcastle', 'CesiumUnminified');
+    return combineJavaScript({
+        removePragmas : false,
+        optimizer : 'none',
+        outputDirectory : outputDirectory
+    });
+}
+
 function combine() {
     var outputDirectory = path.join('Build', 'CesiumUnminified');
     return combineJavaScript({
@@ -284,7 +293,7 @@ gulp.task('generateDocumentation-watch', function() {
     });
 });
 
-gulp.task('release', gulp.series('generateStubs', combine, minifyRelease, generateDocumentation));
+gulp.task('release', gulp.series('generateStubs', combineForSandcastle, generateDocumentation));
 
 gulp.task('makeZipFile', gulp.series('release', function() {
     //For now we regenerate the JS glsl to force it to be unminified in the release zip
@@ -362,29 +371,25 @@ gulp.task('deploy-s3', function(done) {
         return;
     }
 
-    var argv = yargs.usage('Usage: deploy-s3 -b [Bucket Name] -d [Upload Directory]')
-        .demand(['b', 'd']).argv;
-
-    var uploadDirectory = argv.d;
-    var bucketName = argv.b;
+    var argv = yargs.usage('Usage: deploy-s3').argv;
     var cacheControl = argv.c ? argv.c : 'max-age=3600';
 
     if (argv.confirm) {
         // skip prompt for travis
-        deployCesium(bucketName, uploadDirectory, cacheControl, done);
+        deployCesium(cacheControl, done);
         return;
     }
 
     var iface = readline.createInterface({
-        input: process.stdin,
-        output: process.stdout
+        input : process.stdin,
+        output : process.stdout
     });
 
     // prompt for confirmation
-    iface.question('Files from your computer will be published to the ' + bucketName + ' bucket. Continue? [y/n] ', function(answer) {
+    iface.question('Files from your computer will be published to the cesium.com bucket. Continue? [y/n] ', function(answer) {
         iface.close();
         if (answer === 'y') {
-            deployCesium(bucketName, uploadDirectory, cacheControl, done);
+            deployCesium(cacheControl, done);
         } else {
             console.log('Deploy aborted by user.');
             done();
@@ -394,7 +399,11 @@ gulp.task('deploy-s3', function(done) {
 });
 
 // Deploy cesium to s3
-function deployCesium(bucketName, uploadDirectory, cacheControl, done) {
+function deployCesium(cacheControl, done) {
+    var bucketName = 'cesium-dev';
+    var refDocPrefix = 'hpinkos-cesium.com-test/docs/cesiumjs-ref-doc';
+    var sandcastlePrefix = 'hpinkos-cesium.com-test/cesiumjs/sandcastle';
+    var cesiumViewerPrefix = 'hpinkos-cesium.com-test/cesiumjs/cesium-viewer';
     var readFile = Promise.promisify(fs.readFile);
     var gzip = Promise.promisify(zlib.gzip);
     var concurrencyLimit = 2000;
@@ -406,45 +415,18 @@ function deployCesium(bucketName, uploadDirectory, cacheControl, done) {
         }
     });
 
-    var existingBlobs = [];
-    var totalFiles = 0;
     var uploaded = 0;
-    var skipped = 0;
     var errors = [];
 
-    var prefix = uploadDirectory + '/';
-    return listAll(s3, bucketName, prefix, existingBlobs)
-        .then(function() {
-            return globby([
-                'Apps/**',
-                'Build/**',
-                'Source/**',
-                'Specs/**',
-                'ThirdParty/**',
-                '*.md',
-                'favicon.ico',
-                'gulpfile.js',
-                'index.html',
-                'package.json',
-                'server.js',
-                'web.config',
-                '*.zip',
-                '*.tgz'
-            ], {
-                dot : true // include hidden files
-            });
-        }).then(function(files) {
-            return Promise.map(files, function(file) {
-                var blobName = uploadDirectory + '/' + file;
-                var mimeLookup = getMimeType(blobName);
-                var contentType = mimeLookup.type;
-                var compress = mimeLookup.compress;
-                var contentEncoding = compress ? 'gzip' : undefined;
-                var etag;
+    function uploadFiles(prefix, filePrefix, files) {
+        return Promise.map(files, function(file) {
+            var blobName = prefix + '/' + file.replace(filePrefix, '');
+            var mimeLookup = getMimeType(blobName);
+            var contentType = mimeLookup.type;
+            var compress = mimeLookup.compress;
+            var contentEncoding = compress ? 'gzip' : undefined;
 
-                totalFiles++;
-
-                return readFile(file)
+            return readFile(file)
                 .then(function(content) {
                     if (!compress) {
                         return content;
@@ -459,46 +441,10 @@ function deployCesium(bucketName, uploadDirectory, cacheControl, done) {
                     return gzip(content);
                 })
                 .then(function(content) {
-                    // compute hash and etag
-                    var hash = crypto.createHash('md5').update(content).digest('hex');
-                    etag = crypto.createHash('md5').update(content).digest('base64');
-
-                    var index = existingBlobs.indexOf(blobName);
-                    if (index <= -1) {
-                        return content;
-                    }
-
-                    // remove files as we find them on disk
-                    existingBlobs.splice(index, 1);
-
-                    // get file info
-                    return s3.headObject({
-                            Bucket: bucketName,
-                            Key: blobName
-                        }).promise().then(function(data) {
-                            if (data.ETag !== ('"' + hash + '"') ||
-                                data.CacheControl !== cacheControl ||
-                                data.ContentType !== contentType ||
-                                data.ContentEncoding !== contentEncoding) {
-                                return content;
-                            }
-
-                            // We don't need to upload this file again
-                            skipped++;
-                            return undefined;
-                        })
-                        .catch(function(error) {
-                            errors.push(error);
-                        });
-                })
-                .then(function(content) {
-                    if (!content) {
-                        return;
-                    }
-
                     if (verbose) {
                         console.log('Uploading ' + blobName + '...');
                     }
+                    var etag = crypto.createHash('md5').update(content).digest('base64');
                     var params = {
                         Bucket : bucketName,
                         Key : blobName,
@@ -509,55 +455,46 @@ function deployCesium(bucketName, uploadDirectory, cacheControl, done) {
                         CacheControl : cacheControl
                     };
 
-                    return s3.putObject(params).promise()
-                        .then(function() {
-                            uploaded++;
-                        })
-                        .catch(function(error) {
-                            errors.push(error);
-                        });
+                    return s3.putObject(params).promise();
+                })
+                .then(function() {
+                    uploaded++;
+                })
+                .catch(function(error) {
+                    errors.push(error);
                 });
-            }, {concurrency : concurrencyLimit});
-        }).then(function() {
-            console.log('Skipped ' + skipped + ' files and successfully uploaded ' + uploaded + ' files of ' + (totalFiles - skipped) + ' files.');
-            if (existingBlobs.length === 0) {
-                return;
-            }
+        }, {concurrency : concurrencyLimit});
+    }
 
-            var objectsToDelete = [];
-            existingBlobs.forEach(function(file) {
-                //Don't delete generate zip files.
-                if (!/\.(zip|tgz)$/.test(file)) {
-                    objectsToDelete.push({Key : file});
-                }
-            });
+    var uploadSandcastle = globby([
+        'Build/Sandcastle/**'
+    ])
+        .then(function(files) {
+            return uploadFiles(sandcastlePrefix, 'Build/Sandcastle/', files);
+        });
 
-            if (objectsToDelete.length > 0) {
-                console.log('Cleaning ' + objectsToDelete.length + ' files...');
+    var uploadRefDoc = globby([
+        'Build/Documentation/**'
+    ])
+        .then(function(files) {
+            return uploadFiles(refDocPrefix, 'Build/Documentation/', files);
+        });
 
-                // If more than 1000 files, we must issue multiple requests
-                var batches = [];
-                while (objectsToDelete.length > 1000) {
-                    batches.push(objectsToDelete.splice(0, 1000));
-                }
-                batches.push(objectsToDelete);
+    var uploadCesiumViewer = globby([
+        'Build/CesiumViewer/**'
+    ])
+        .then(function(files) {
+            return uploadFiles(cesiumViewerPrefix, 'Build/CesiumViewer/', files);
+        });
 
-                return Promise.map(batches, function(objects) {
-                    return s3.deleteObjects({
-                        Bucket: bucketName,
-                        Delete: {
-                            Objects: objects
-                        }
-                    }).promise().then(function() {
-                        if (verbose) {
-                            console.log('Cleaned ' + objects.length + ' files.');
-                        }
-                    });
-                }, {concurrency : concurrency});
-            }
-        }).catch(function(error) {
+    Promise.join(uploadSandcastle, uploadRefDoc, uploadCesiumViewer)
+        .then(function() {
+            console.log('Successfully uploaded ' + uploaded + ' files.');
+        })
+        .catch(function(error) {
             errors.push(error);
-        }).then(function() {
+        })
+        .then(function() {
             if (errors.length === 0) {
                 done();
                 return;
@@ -604,26 +541,6 @@ function getMimeType(filename) {
     }
 
     return { type: 'application/octet-stream', compress: true };
-}
-
-// get all files currently in bucket asynchronously
-function listAll(s3, bucketName, prefix, files, marker) {
-    return s3.listObjects({
-        Bucket: bucketName,
-        MaxKeys: 1000,
-        Prefix: prefix,
-        Marker: marker
-    }).promise().then(function(data) {
-        var items = data.Contents;
-        for (var i = 0; i < items.length; i++) {
-            files.push(items[i].Key);
-        }
-
-        if (data.IsTruncated) {
-            // get next page of results
-            return listAll(s3, bucketName, prefix, files, files[files.length - 1]);
-        }
-    });
 }
 
 gulp.task('deploy-set-version', function(done) {
@@ -1311,43 +1228,60 @@ var sandcastleJsHintOptions = ' + JSON.stringify(primary, null, 4) + ';\n';
 
 function buildSandcastle() {
     var appStream = gulp.src([
-            'Apps/Sandcastle/**',
-            '!Apps/Sandcastle/standalone.html',
-            '!Apps/Sandcastle/images/**',
-            '!Apps/Sandcastle/gallery/**.jpg'
-        ])
-        // Replace require Source with pre-built Cesium
-        .pipe(gulpReplace('../../../ThirdParty/requirejs-2.1.20/require.js', '../../../CesiumUnminified/Cesium.js'))
+        'Apps/Sandcastle/**',
+        '!Apps/Sandcastle/standalone.html',
+        '!Apps/Sandcastle/images/**',
+        '!Apps/Sandcastle/gallery/**.jpg'
+    ])
+    // For gallery items, replace require Source with pre-built Cesium
+        .pipe(gulpReplace('../../../ThirdParty/requirejs-2.1.20/require.js', '../CesiumUnminified/Cesium.js'))
+        .pipe(gulpReplace('../Build/CesiumUnminified', './CesiumUnminified'))
         // Use unminified cesium instead of source
         .pipe(gulpReplace('Source/Cesium', 'CesiumUnminified'))
+        .pipe(gulpReplace('../Apps/Sandcastle', '.'))
         // Fix relative paths for new location
-        .pipe(gulpReplace('../../Source', '../../../Source'))
-        .pipe(gulpReplace('../../ThirdParty', '../../../ThirdParty'))
-        .pipe(gulpReplace('../../SampleData', '../../../../Apps/SampleData'))
-        .pipe(gulpReplace('Build/Documentation', 'Documentation'))
-        .pipe(gulp.dest('Build/Apps/Sandcastle'));
+        .pipe(gulpReplace('../../../Source', '../CesiumUnminified'))
+        .pipe(gulpReplace('../../Source', '.'))
+        .pipe(gulpReplace('../../../ThirdParty', './ThirdParty'))
+        .pipe(gulpReplace('../../ThirdParty', './ThirdParty'))
+        .pipe(gulpReplace('../ThirdParty', './ThirdParty'))
+        .pipe(gulpReplace('../../SampleData', '../SampleData'))
+        .pipe(gulpReplace('../../Build/Documentation', '/docs/cesiumjs-ref-doc'))
+        .pipe(gulp.dest('Build/Sandcastle'));
 
     var imageStream = gulp.src([
-            'Apps/Sandcastle/gallery/**.jpg',
-            'Apps/Sandcastle/images/**'
-        ], {
-            base: 'Apps/Sandcastle',
-            buffer: false
-        })
-        .pipe(gulp.dest('Build/Apps/Sandcastle'));
+        'Apps/Sandcastle/gallery/**.jpg',
+        'Apps/Sandcastle/images/**'
+    ], {
+        base : 'Apps/Sandcastle',
+        buffer : false
+    })
+        .pipe(gulp.dest('Build/Sandcastle'));
+
+    var fileStream = gulp.src([
+        'ThirdParty/**'
+    ])
+        .pipe(gulp.dest('Build/Sandcastle/ThirdParty'));
+
+    var dataStream = gulp.src([
+        'Apps/SampleData/**'
+    ])
+        .pipe(gulp.dest('Build/Sandcastle/SampleData'));
 
     var standaloneStream = gulp.src([
         'Apps/Sandcastle/standalone.html'
-        ])
-        .pipe(gulpReplace('../../ThirdParty/requirejs-2.1.20/require.js', '../../../ThirdParty/requirejs-2.1.20/require.js'))
+    ])
+        .pipe(gulpReplace('../../../', '.'))
+        .pipe(gulpReplace('../../ThirdParty/requirejs-2.1.20/require.js', './ThirdParty/requirejs-2.1.20/require.js'))
+        .pipe(gulpReplace('../Build/CesiumUnminified', '../CesiumUnminified'))
         .pipe(gulpReplace('Source/Cesium', 'CesiumUnminified'))
-        .pipe(gulp.dest('Build/Apps/Sandcastle'));
+        .pipe(gulp.dest('Build/Sandcastle'));
 
-    return streamToPromise(mergeStream(appStream, imageStream, standaloneStream));
+    return streamToPromise(mergeStream(appStream, fileStream, dataStream, imageStream, standaloneStream));
 }
 
 function buildCesiumViewer() {
-    var cesiumViewerOutputDirectory = 'Build/Apps/CesiumViewer';
+    var cesiumViewerOutputDirectory = 'Build/CesiumViewer';
     var cesiumViewerStartup = path.join(cesiumViewerOutputDirectory, 'CesiumViewerStartup.js');
     var cesiumViewerCss = path.join(cesiumViewerOutputDirectory, 'CesiumViewer.css');
     mkdirp.sync(cesiumViewerOutputDirectory);
@@ -1400,18 +1334,18 @@ function buildCesiumViewer() {
             gulp.src(['ThirdParty/requirejs-2.1.20/require.min.js'])
                 .pipe(gulpRename('require.js')),
 
-            gulp.src(['Build/Cesium/Assets/**',
-                      'Build/Cesium/Workers/**',
-                      'Build/Cesium/ThirdParty/**',
-                      'Build/Cesium/Widgets/**',
-                      '!Build/Cesium/Widgets/**/*.css'],
+            gulp.src(['Build/Sandcastle/CesiumUnminified/Assets/**',
+                      'Build/Sandcastle/CesiumUnminified/Workers/**',
+                      'Build/Sandcastle/CesiumUnminified/ThirdParty/**',
+                      'Build/Sandcastle/CesiumUnminified/Widgets/**',
+                      '!Build/Sandcastle/CesiumUnminified/Widgets/**/*.css'],
                 {
-                    base : 'Build/Cesium',
+                    base : 'Build/Sandcastle/CesiumUnminified',
                     nodir : true
                 }),
 
-            gulp.src(['Build/Cesium/Widgets/InfoBox/InfoBoxDescription.css'], {
-                base : 'Build/Cesium'
+            gulp.src(['Build/Sandcastle/CesiumUnminified/Widgets/InfoBox/InfoBoxDescription.css'], {
+                base : 'Build/Sandcastle/CesiumUnminified'
             }),
 
             gulp.src(['web.config'])
